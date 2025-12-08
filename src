@@ -1,0 +1,152 @@
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+
+local TARGET_GROUP_ID = 693335996
+local LIST_KEY = Enum.KeyCode.B
+local ESP_KEY = Enum.KeyCode.V
+local SHOW_COUNTER = true
+
+local ESP = {
+    NAME = true,
+    BOX  = true
+}
+
+local currentTarget = nil
+
+-- Counter
+if SHOW_COUNTER then
+    local gui = Instance.new("ScreenGui", game.CoreGui)
+ gui.Name = "StaffCounter"
+ gui.ResetOnSpawn = false
+ local label = Instance.new("TextLabel", gui)
+ label.Size = UDim2.new(0,200,0,50)
+ label.Position = UDim2.new(0,10,0,10)
+ label.BackgroundTransparency = 0.5
+ label.BackgroundColor3 = Color3.new(0,0,0)
+ label.TextColor3 = Color3.new(1,0.2,0.2)
+ label.TextStrokeTransparency = 0.7
+ label.Font = Enum.Font.GothamBold
+ label.TextSize = 20
+ label.Text = "Staff: 0"
+ label.Name = "Counter"
+end
+
+local function updateCounter()
+ if not SHOW_COUNTER then return end
+ local c = 0
+ for _,p in Players:GetPlayers() do
+  if p ~= LocalPlayer and p:IsInGroup(TARGET_GROUP_ID) then c += 1 end
+ end
+ pcall(function() game.CoreGui.StaffCounter.Counter.Text = "Staff: "..c end)
+end
+
+-- ESP Drawings
+local Box = Drawing.new("Square")
+Box.Thickness = 2
+Box.Filled = false
+local NameTag = Drawing.new("Text")
+NameTag.Size = 16
+NameTag.Center = true
+NameTag.Outline = true
+NameTag.Font = 2
+
+local function removeESP()
+ Box.Visible = false
+ NameTag.Visible = false
+ currentTarget = nil
+end
+
+local function getClosest()
+ local best, dist = nil, 150
+ local mx,my = Mouse.X, Mouse.Y
+ for _,p in Players:GetPlayers() do
+  if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+   local pos,on = Camera:WorldToViewportPoint(p.Character.HumanoidRootPart.Position)
+   if on then
+    local d = (Vector2.new(pos.X,pos.Y) - Vector2.new(mx,my)).Magnitude
+    if d < dist then dist = d best = p end
+   end
+  end
+ end
+ return best
+end
+
+local function drawESP()
+ if not currentTarget or not currentTarget.Character or not currentTarget.Character:FindFirstChild("HumanoidRootPart") then
+  removeESP()
+  return
+ end
+
+ local root = currentTarget.Character.HumanoidRootPart
+ local head = Camera:WorldToViewportPoint(root.Position + Vector3.new(0,3,0))
+ local foot = Camera:WorldToViewportPoint(root.Position - Vector3.new(0,4,0))
+ if head.Z < 0 then removeESP() return end
+
+ local height = math.abs(head.Y - foot.Y)
+ local width = height * 0.8
+ local isStaff = currentTarget:IsInGroup(TARGET_GROUP_ID)
+ local col = isStaff and Color3.fromRGB(255,50,50) or Color3.fromRGB(50,255,50)
+
+ if ESP.BOX then
+  Box.Position = Vector2.new(head.X - width/2, head.Y)
+  Box.Size = Vector2.new(width, height)
+  Box.Color = col
+  Box.Visible = true
+ else
+  Box.Visible = false
+ end
+
+ if ESP.NAME then
+  NameTag.Text = isStaff and currentTarget.Name.." (STAFF)" or currentTarget.Name
+  NameTag.Position = Vector2.new(head.X, head.Y - 25)
+  NameTag.Color = col
+  NameTag.Visible = true
+ else
+  NameTag.Visible = false
+ end
+end
+
+RunService.RenderStepped:Connect(drawESP)
+
+UserInputService.InputBegan:Connect(function(i,gp)
+ if gp then return end
+ if i.KeyCode == LIST_KEY then
+  local t = {}
+  for _,p in Players:GetPlayers() do
+   if p ~= LocalPlayer and p:IsInGroup(TARGET_GROUP_ID) then
+    local _,r = pcall(p.GetRoleInGroup,p,TARGET_GROUP_ID)
+    table.insert(t,"• "..p.Name.." ("..(r or "Member")..")")
+   end
+  end
+  table.sort(t)
+  StarterGui:SetCore("SendNotification",{
+   Title = "Staff ("..#t..")",
+   Text = #t>0 and table.concat(t,"\n") or "No staff",
+   Duration = 10
+  })
+ elseif i.KeyCode == ESP_KEY then
+  local p = getClosest()
+  if p then
+   if currentTarget == p then removeESP() else currentTarget = p end
+  else
+   removeESP()
+  end
+ end
+end)
+
+-- alerts & counter
+local function alert(t,p) StarterGui:SetCore("SendNotification",{Title=t,Text=p.Name,Duration=5}) updateCounter() end
+for _,p in Players:GetPlayers() do if p ~= LocalPlayer and p:IsInGroup(TARGET_GROUP_ID) then alert("Staff Joined",p) end end
+Players.PlayerAdded:Connect(function(p) task.wait(1.5) if p:IsInGroup(TARGET_GROUP_ID) then alert("Staff Joined",p) end end)
+Players.PlayerRemoving:Connect(function(p)
+ if p ~= LocalPlayer and p:IsInGroup(TARGET_GROUP_ID) then alert("Staff Left",p) end
+ if p == currentTarget then removeESP() end
+end)
+
+updateCounter()
+StarterGui:SetCore("SendNotification",{Title="Staff Checker",Text="B = List • V = Check player",Duration=5})
